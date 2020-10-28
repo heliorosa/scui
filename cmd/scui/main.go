@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 
@@ -81,13 +82,12 @@ func main() {
 					}
 					fmt.Printf("returned:\n")
 					for nj, j := range r {
-						var sv interface{}
-						if jj, ok := j.(common.Address); ok {
-							sv = jj.Hex()
-						} else {
-							sv = j
+						b, err := json.Marshal(j)
+						if err != nil {
+							fmt.Printf("can't marshal result: %s\n", err)
+							break
 						}
-						fmt.Printf("  (%s) %s\n", contractABI.Methods[sub.Suggestion.Text].Outputs[nj].Type.String(), sv)
+						fmt.Printf("  (%s) %s\n", contractABI.Methods[sub.Suggestion.Text].Outputs[nj].Type.String(), string(b))
 					}
 				case transactNode:
 					if txSigner.Kind() == signer.None {
