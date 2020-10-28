@@ -11,16 +11,23 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/c-bata/go-prompt"
+	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/accounts/usbwallet"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/transmutate-io/scui/signer"
+	"github.com/transmutate-io/scui/ui"
 )
 
 var menuCommands = map[string]func(){
-	"signer/key": cmdConfigSignerKey,
-	// "signer/ledger": cmdConfigSignerLedger,
+	"signer/key":    cmdConfigSignerKey,
+	"signer/ledger": cmdConfigSignerLedger,
+	"signer/show":   cmdConfigSignerShow,
 }
 
 func cmdConfigSignerKey() {
@@ -29,10 +36,127 @@ func cmdConfigSignerKey() {
 		fmt.Printf("can't read key file: %s\n", err)
 		return
 	}
-	txSigner = newKeySigner(key)
+	txSigner = signer.NewKeyed(key)
 }
 
-func cmdConfigSignerLedger() {}
+func cmdConfigSignerLedger() {
+	// close any previously open wallet
+	if txSigner != nil &&
+		txSigner.Kind() == signer.HardwareWallet &&
+		txSigner.Wallet != nil {
+		txSigner.Wallet.Wallet.Close()
+	}
+	// new hub
+	hub, err := usbwallet.NewLedgerHub()
+	if err != nil {
+		fmt.Printf("can't start hub: %s\n", err)
+		return
+	}
+	// pick wallet
+	var w accounts.Wallet
+	if sz := len(hub.Wallets()); sz == 0 {
+		fmt.Printf("can't find any wallets\n")
+		return
+	} else if sz == 1 {
+		w = hub.Wallets()[0]
+	} else {
+		fmt.Printf("found more than one wallet. choose one.\n")
+		wallets := hub.Wallets()
+		wm := make(map[string]accounts.Wallet, len(wallets))
+		wu := make([]string, 0, len(wallets))
+		for _, i := range wallets {
+			wm[i.URL().String()] = i
+			wu = append(wu, i.URL().String())
+		}
+		u, ok := ui.InputMultiChoiceString("wallet (%s): ", wu[0], wu, func(c []prompt.Suggest) {
+			fmt.Printf("choose one of the url's\n")
+		})
+		if !ok {
+			fmt.Printf("aborted\n")
+			return
+		}
+		w = wm[u]
+	}
+	// open
+	if err = w.Open(""); err != nil {
+		fmt.Printf("can't open wallet: %s\n", err)
+		return
+	}
+	// check status
+	st, err := w.Status()
+	if err != nil {
+		fmt.Printf("can't get status: %s\n", err)
+	}
+	fmt.Printf("wallet status: %s\n", st)
+	dpTemplates := []string{"m/44'/60'/x'/0/0", "m/44'/60'/0'/x", "custom"}
+	dp, ok := ui.InputMultiChoiceString("derivation path (%s): ", dpTemplates[0], dpTemplates, func(c []prompt.Suggest) {
+		fmt.Printf("choose one of the derivation paths or custom\n")
+	})
+	if !ok {
+		fmt.Printf("aborted\n")
+		return
+	}
+	if dp == "custom" {
+		dp = ui.InputText("custom derivation path: ")
+	}
+	dp = strings.Replace(dp, "x", "%d", -1)
+	// pick address
+	addrIdx := 0
+	addrs := make([]string, 0, 5)
+	for {
+		for i := 0; i < 5; i++ {
+			dp, err := accounts.ParseDerivationPath(fmt.Sprintf(dp, addrIdx))
+			if err != nil {
+				fmt.Printf("can't parse derivation path: %s\n", err)
+				return
+			}
+			addrIdx++
+			acc, err := w.Derive(dp, false)
+			if err != nil {
+				fmt.Printf("can't derive address: %s\n", err)
+				return
+			}
+			addrs = append(addrs, acc.Address.Hex())
+		}
+		choices := append(make([]string, 0, len(addrs)+1), addrs...)
+		choices = append(choices, "more")
+		a, ok := ui.InputMultiChoiceString("address (%s): ", addrs[0], choices, func(c []prompt.Suggest) {
+			fmt.Printf("pick one address or more to generate\n")
+		})
+		if !ok {
+			fmt.Printf("aborted\n")
+			return
+		}
+		if a == "more" {
+			continue
+		}
+		txSigner = signer.NewLedger(w, common.HexToAddress(a))
+		break
+	}
+}
+
+func cmdConfigSignerShow() {
+	if sk := txSigner.Kind(); sk == signer.None {
+		fmt.Printf("no signer set\n")
+		return
+	} else if sk == signer.Keyed {
+		fmt.Printf(
+			"sign with a key.\naddress: %s\n",
+			crypto.PubkeyToAddress(txSigner.Key.PublicKey).Hex(),
+		)
+		return
+	}
+	st, err := txSigner.Wallet.Wallet.Status()
+	if err != nil {
+		fmt.Printf("can't get hardware wallet status: %s\n", err)
+		return
+	}
+	fmt.Printf(
+		"sign with hardware wallet.\n%s\naddress: %s\n",
+		st,
+		txSigner.Wallet.Account.Address.Hex(),
+	)
+}
 
 var (
 	errNotConstant = errors.New("method is not constant")
@@ -104,30 +228,33 @@ func executeTransactMethod(cl *ethclient.Client, addr *common.Address, abi *abi.
 		return nil, err
 	}
 	bc := bind.NewBoundContract(*addr, *abi, cl, cl, cl)
-	opts := bind.NewKeyedTransactor(txSigner.key)
+	opts, err := txSigner.TransactOpts()
+	if err != nil {
+		return nil, err
+	}
 	if abi.Methods[name].IsPayable() {
-		send, ok := inputYesNo("method is payable. send amount with transaction? (%s): ", false)
+		send, ok := ui.InputYesNo("method is payable. send amount with transaction? (%s): ", false)
 		if !ok {
 			return nil, errAborted
 		}
 		if send {
-			amount := inputBigInt("amount: ")
+			amount := ui.InputBigInt("amount: ")
 			opts.Value = amount
 		}
 	}
-	if estimateGasPrice, ok := inputYesNo("estimate gas price? (%s): ", true); !ok {
+	if estimateGasPrice, ok := ui.InputYesNo("estimate gas price? (%s): ", true); !ok {
 		return nil, errAborted
 	} else if !estimateGasPrice {
 		sugg, err := cl.SuggestGasPrice(context.Background())
 		if err != nil {
 			return nil, err
 		}
-		opts.GasPrice = inputBigIntWithDefault("gas price (%s): ", sugg)
+		opts.GasPrice = ui.InputBigIntWithDefault("gas price (%s): ", sugg)
 	}
-	if estimateGasLimit, ok := inputYesNo("estimate gas limit? (%s): ", true); !ok {
+	if estimateGasLimit, ok := ui.InputYesNo("estimate gas limit? (%s): ", true); !ok {
 		return nil, errAborted
 	} else if !estimateGasLimit {
-		if gl, ok := inputIntWithDefault("gas limit (%d): ", 0); ok {
+		if gl, ok := ui.InputIntWithDefault("gas limit (%d): ", 0); ok {
 			opts.GasLimit = uint64(gl)
 		}
 	}
@@ -141,13 +268,13 @@ func listEvents(cl *ethclient.Client, addr *common.Address, abi *abi.ABI, name s
 		return
 	}
 	opts := &bind.FilterOpts{}
-	startBlock, ok := inputIntWithDefault("start block (%d): ", 0)
+	startBlock, ok := ui.InputIntWithDefault("start block (%d): ", 0)
 	if !ok {
 		fmt.Printf("aborted\n")
 		return
 	}
 	opts.Start = uint64(startBlock)
-	if lastBlock, ok := inputIntWithDefault("end block (last, %d): ", -1); !ok {
+	if lastBlock, ok := ui.InputIntWithDefault("end block (last, %d): ", -1); !ok {
 		fmt.Printf("aborted\n")
 		return
 	} else if lastBlock >= 0 {
