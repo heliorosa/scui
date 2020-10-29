@@ -44,6 +44,7 @@ func main() {
 		newSignerMenu(),
 	})
 	curNode := rootNode
+	fmt.Printf("\nWelcome to scui.\nType \"help\" for a list of available commands or press <TAB> for auto-complete\n\n")
 	for {
 		inp := prompt.Input(curNode.Prompt(">"), curNode.Completer)
 	Outer:
