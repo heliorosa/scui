@@ -1,4 +1,4 @@
-package main
+package internal
 
 import (
 	"crypto/ecdsa"
@@ -10,12 +10,12 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 )
 
-func errorExit(code int, f string, a ...interface{}) {
+func ErrorExit(code int, f string, a ...interface{}) {
 	fmt.Fprintf(os.Stderr, f, a...)
 	os.Exit(code)
 }
 
-func readABI(fn string) (*abi.ABI, error) {
+func ReadABI(fn string) (*abi.ABI, error) {
 	f, err := os.Open(fn)
 	if err != nil {
 		return nil, err
@@ -28,7 +28,7 @@ func readABI(fn string) (*abi.ABI, error) {
 	return &r, nil
 }
 
-func parseKey(b []byte, encrypted bool, password string) (*ecdsa.PrivateKey, error) {
+func ParseKey(b []byte, encrypted bool, password string) (*ecdsa.PrivateKey, error) {
 	if encrypted {
 		ksk, err := keystore.DecryptKey(b, password)
 		if err != nil {

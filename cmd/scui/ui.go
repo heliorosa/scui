@@ -12,7 +12,8 @@ import (
 
 	"github.com/c-bata/go-prompt"
 	"github.com/ethereum/go-ethereum/accounts/abi"
-	"github.com/transmutate-io/scui/ui"
+	"github.com/heliorosa/scui/internal"
+	"github.com/heliorosa/scui/ui"
 )
 
 func newSignerMenu() *ui.MenuCompleter {
@@ -59,7 +60,7 @@ func inputKeyFile() (*ecdsa.PrivateKey, error) {
 			return nil, err
 		}
 	}
-	return parseKey(b, encrypted, password)
+	return internal.ParseKey(b, encrypted, password)
 }
 
 func methodsMenus(methods map[string]abi.Method) (*ui.MenuCompleter, *ui.MenuCompleter) {

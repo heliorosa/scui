@@ -8,28 +8,29 @@ import (
 	"github.com/c-bata/go-prompt"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
-	"github.com/transmutate-io/scui/signer"
-	"github.com/transmutate-io/scui/ui"
+	"github.com/heliorosa/scui/internal"
+	"github.com/heliorosa/scui/signer"
+	"github.com/heliorosa/scui/ui"
 )
 
 var txSigner *signer.Signer
 
 func main() {
 	if len(os.Args) != 4 {
-		errorExit(-1, "missing arguments: usage: %s <client_url> <address> <abi_file>\n", os.Args[0])
+		internal.ErrorExit(-1, "missing arguments: usage: %s <client_url> <address> <abi_file>\n", os.Args[0])
 	}
 	// dial client
 	cl, err := ethclient.Dial(os.Args[1])
 	if err != nil {
-		errorExit(-2, "can't dial client: %s\n", err)
+		internal.ErrorExit(-2, "can't dial client: %s\n", err)
 	}
 	defer cl.Close()
 	// parse contract address
 	contractAddr := common.HexToAddress(os.Args[2])
 	// read and parse abi file
-	contractABI, err := readABI(os.Args[3])
+	contractABI, err := internal.ReadABI(os.Args[3])
 	if err != nil {
-		errorExit(-3, "can't read abi: %s\n", err)
+		internal.ErrorExit(-3, "can't read abi: %s\n", err)
 	}
 	// setup constant and transaction method calls
 	constantNode, transactNode := methodsMenus(contractABI.Methods)

@@ -20,8 +20,8 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
-	"github.com/transmutate-io/scui/signer"
-	"github.com/transmutate-io/scui/ui"
+	"github.com/heliorosa/scui/signer"
+	"github.com/heliorosa/scui/ui"
 )
 
 var menuCommands = map[string]func(){
@@ -177,7 +177,7 @@ func executeConstantMethod(cl *ethclient.Client, addr *common.Address, abi *abi.
 	}
 	// call method
 	res := newCallResult(method.Outputs)
-	if err := bc.Call(nil, res.res, name, args...); err != nil {
+	if err := bc.Call(nil, &res.res, name, args...); err != nil {
 		return nil, err
 	}
 	return res.results(), nil
@@ -185,7 +185,7 @@ func executeConstantMethod(cl *ethclient.Client, addr *common.Address, abi *abi.
 
 type callResult struct {
 	mo  abi.Arguments
-	res interface{}
+	res []interface{}
 }
 
 func newCallResult(mo abi.Arguments) *callResult {
@@ -193,13 +193,13 @@ func newCallResult(mo abi.Arguments) *callResult {
 	case 0:
 		return nil
 	case 1:
-		return &callResult{mo: mo, res: reflect.New(mo[0].Type.GetType()).Interface()}
+		return &callResult{mo: mo, res: []interface{}{reflect.New(mo[0].Type.GetType()).Interface()}}
 	}
 	r := make([]interface{}, 0, len(mo))
 	for _, i := range mo {
 		r = append(r, reflect.New(i.Type.GetType()).Interface())
 	}
-	return &callResult{mo: mo, res: &r}
+	return &callResult{mo: mo, res: r}
 }
 
 func indirectInterface(v interface{}) interface{} {
@@ -207,14 +207,11 @@ func indirectInterface(v interface{}) interface{} {
 }
 
 func (cr *callResult) results() []interface{} {
-	if s, ok := cr.res.(*[]interface{}); ok {
-		r := make([]interface{}, 0, 4)
-		for _, i := range *s {
-			r = append(r, indirectInterface(i))
-		}
-		return r
+	r := make([]interface{}, 0, 4)
+	for _, i := range cr.res {
+		r = append(r, indirectInterface(i))
 	}
-	return []interface{}{indirectInterface(cr.res)}
+	return r
 }
 
 func executeTransactMethod(cl *ethclient.Client, addr *common.Address, abi *abi.ABI, name string) (*types.Transaction, error) {
