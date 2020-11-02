@@ -89,7 +89,12 @@ func main() {
 							fmt.Printf("can't marshal result: %s\n", err)
 							break
 						}
-						fmt.Printf("  (%s) %s\n", contractABI.Methods[sub.Suggestion.Text].Outputs[nj].Type.String(), string(b))
+						me := contractABI.Methods[sub.Suggestion.Text].Outputs[nj]
+						pref := me.Type.String()
+						if me.Name != "" {
+							pref += " " + me.Name
+						}
+						fmt.Printf("  (%s) %s\n", pref, string(b))
 					}
 				case transactNode:
 					if txSigner.Kind() == signer.None {

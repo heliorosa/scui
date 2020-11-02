@@ -101,22 +101,22 @@ func cmdConfigSignerLedger() {
 	}
 	dp = strings.Replace(dp, "x", "%d", -1)
 	// pick address
-	addrIdx := 0
 	addrs := make([]string, 0, 5)
 	for {
+		accs := make(map[string]*accounts.Account, 5)
 		for i := 0; i < 5; i++ {
-			dp, err := accounts.ParseDerivationPath(fmt.Sprintf(dp, addrIdx))
+			dp, err := accounts.ParseDerivationPath(fmt.Sprintf(dp, i))
 			if err != nil {
 				fmt.Printf("can't parse derivation path: %s\n", err)
 				return
 			}
-			addrIdx++
-			acc, err := w.Derive(dp, false)
+			acc, err := w.Derive(dp, true)
 			if err != nil {
 				fmt.Printf("can't derive address: %s\n", err)
 				return
 			}
 			addrs = append(addrs, acc.Address.Hex())
+			accs[acc.Address.Hex()] = &acc
 		}
 		choices := append(make([]string, 0, len(addrs)+1), addrs...)
 		choices = append(choices, "more")
@@ -130,7 +130,7 @@ func cmdConfigSignerLedger() {
 		if a == "more" {
 			continue
 		}
-		txSigner = signer.NewLedger(w, common.HexToAddress(a))
+		txSigner = signer.NewLedger(w, accs[a])
 		break
 	}
 }
@@ -166,7 +166,7 @@ var (
 
 func executeConstantMethod(cl *ethclient.Client, addr *common.Address, abi *abi.ABI, name string) ([]interface{}, error) {
 	fmt.Printf("constant call arguments:\n")
-	args, err := inputArguments(abi.Methods[name].Inputs, false)
+	args, err := inputArguments(abi.Methods[name].Inputs)
 	if err != nil {
 		return nil, err
 	}
@@ -194,12 +194,13 @@ func newCallResult(mo abi.Arguments) *callResult {
 		return nil
 	case 1:
 		return &callResult{mo: mo, res: []interface{}{reflect.New(mo[0].Type.GetType()).Interface()}}
+	default:
+		r := make([]interface{}, 0, len(mo))
+		for _, i := range mo {
+			r = append(r, reflect.New(i.Type.GetType()).Interface())
+		}
+		return &callResult{mo: mo, res: []interface{}{&r}}
 	}
-	r := make([]interface{}, 0, len(mo))
-	for _, i := range mo {
-		r = append(r, reflect.New(i.Type.GetType()).Interface())
-	}
-	return &callResult{mo: mo, res: r}
 }
 
 func indirectInterface(v interface{}) interface{} {
@@ -208,7 +209,13 @@ func indirectInterface(v interface{}) interface{} {
 
 func (cr *callResult) results() []interface{} {
 	r := make([]interface{}, 0, 4)
-	for _, i := range cr.res {
+	var rr []interface{}
+	if res, ok := cr.res[0].(*[]interface{}); ok {
+		rr = *res
+	} else {
+		rr = cr.res
+	}
+	for _, i := range rr {
 		r = append(r, indirectInterface(i))
 	}
 	return r
@@ -220,12 +227,16 @@ func executeTransactMethod(cl *ethclient.Client, addr *common.Address, abi *abi.
 		return nil, errConstant
 	}
 	fmt.Printf("transaction arguments:\n")
-	args, err := inputArguments(abi.Methods[name].Inputs, false)
+	args, err := inputArguments(abi.Methods[name].Inputs)
 	if err != nil {
 		return nil, err
 	}
 	bc := bind.NewBoundContract(*addr, *abi, cl, cl, cl)
-	opts, err := txSigner.TransactOpts()
+	chainID, err := cl.ChainID(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	opts, err := txSigner.TransactOpts(chainID)
 	if err != nil {
 		return nil, err
 	}

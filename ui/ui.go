@@ -11,8 +11,8 @@ import (
 	"syscall"
 
 	"github.com/c-bata/go-prompt"
+	"github.com/heliorosa/scui/internal"
 	"github.com/spf13/cobra"
-	"golang.org/x/crypto/ssh/terminal"
 )
 
 var (
@@ -284,11 +284,7 @@ func ShowHelp(node *MenuCompleter) {
 
 func InputPassword() (string, error) {
 	fmt.Print("password: ")
-	bytePassword, err := terminal.ReadPassword(int(syscall.Stdin))
-	if err != nil {
-		return "", err
-	}
-	return string(bytePassword), nil
+	return internal.PromptPassword()
 }
 
 func InputText(pr string) string {
@@ -316,7 +312,6 @@ func InputBigIntWithDefault(pr string, d *big.Int) *big.Int {
 		if v == "" {
 			return d
 		}
-		fmt.Printf("::: %#v\n", v)
 		if r, ok := new(big.Int).SetString(v, 10); ok {
 			return r
 		}

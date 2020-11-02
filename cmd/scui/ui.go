@@ -127,7 +127,7 @@ func eventsMenu(events map[string]abi.Event) (*ui.MenuCompleter, *ui.MenuComplet
 	return eventsNode, listNode, watchNode
 }
 
-func inputArguments(args abi.Arguments, isFilter bool) ([]interface{}, error) {
+func inputArguments(args abi.Arguments) ([]interface{}, error) {
 	r := make([]interface{}, 0, len(args))
 	for _, i := range args {
 		for {
@@ -148,7 +148,7 @@ func inputArguments(args abi.Arguments, isFilter bool) ([]interface{}, error) {
 }
 
 func unmarshalValue(val string, t reflect.Type) (interface{}, error) {
-	if t.Elem().Kind() == reflect.Ptr {
+	if t.Kind() == reflect.Ptr {
 		t = t.Elem()
 	}
 	v := reflect.New(t).Interface()

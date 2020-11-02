@@ -3,11 +3,12 @@ package signer
 import (
 	"crypto/ecdsa"
 	"errors"
+	"math/big"
 
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
-	"github.com/ethereum/go-ethereum/accounts/external"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 )
 
 type Signer struct {
@@ -17,16 +18,16 @@ type Signer struct {
 
 type walletSigner struct {
 	Wallet  accounts.Wallet
-	Account accounts.Account
+	Account *accounts.Account
 }
 
 func NewKeyed(key *ecdsa.PrivateKey) *Signer { return &Signer{Key: key} }
 
-func NewLedger(w accounts.Wallet, a common.Address) *Signer {
+func NewLedger(w accounts.Wallet, ac *accounts.Account) *Signer {
 	return &Signer{
 		Wallet: &walletSigner{
 			Wallet:  w,
-			Account: accounts.Account{Address: a},
+			Account: ac,
 		},
 	}
 }
@@ -49,17 +50,26 @@ func (s *Signer) Kind() Kind {
 	return None
 }
 
-var ErrNoSigner = errors.New("signer not configured")
+var (
+	ErrNoSigner        = errors.New("signer not configured")
+	ErrAddressNotFound = errors.New("address not found")
+)
 
-func (s *Signer) TransactOpts() (*bind.TransactOpts, error) {
-	if sk := s.Kind(); sk == Keyed {
-		return bind.NewKeyedTransactor(s.Key), nil
-	} else if sk != HardwareWallet {
+func (s *Signer) TransactOpts(chainID *big.Int) (*bind.TransactOpts, error) {
+	switch sk := s.Kind(); sk {
+	case None:
 		return nil, ErrNoSigner
+	case Keyed:
+		return bind.NewKeyedTransactor(s.Key), nil
+	case HardwareWallet:
 	}
-	es, err := external.NewExternalSigner(s.Wallet.Wallet.URL().String())
-	if err != nil {
-		return nil, err
-	}
-	return bind.NewClefTransactor(es, s.Wallet.Account), nil
+	return &bind.TransactOpts{
+		From: s.Wallet.Account.Address,
+		Signer: func(signer types.Signer, fromAddr common.Address, tx *types.Transaction) (*types.Transaction, error) {
+			if s.Wallet.Account.Address != fromAddr {
+				return nil, ErrAddressNotFound
+			}
+			return s.Wallet.Wallet.SignTx(*s.Wallet.Account, tx, chainID)
+		},
+	}, nil
 }
