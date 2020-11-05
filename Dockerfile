@@ -5,12 +5,11 @@ RUN mkdir -p /src/scui && \
 
 COPY . /src/scui
 
-RUN cd /src/scui && \
-    apk add gcc libc-dev linux-headers && \
-    go build -v
+RUN apk add gcc libc-dev linux-headers && \
+    cd /src/scui && \
+    go build -v ./cmd/scui && \
+    go build -v ./cmd/scdeploy
 
-FROM alpine:3.12.0
+FROM alpine:3.12.1
 
-COPY --from=build /src/scui/scui /
-
-ENTRYPOINT [ "/scui" ]
+COPY --from=build /src/scui/scui /src/scui/scdeploy /usr/local/bin/
