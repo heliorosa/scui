@@ -141,7 +141,7 @@ func cmdConfigSignerShow() {
 		return
 	} else if sk == signer.Keyed {
 		fmt.Printf(
-			"sign with a key.\naddress: %s\n",
+			"sign with a key file.\naddress: %s\n",
 			crypto.PubkeyToAddress(txSigner.Key.PublicKey).Hex(),
 		)
 		return
@@ -162,6 +162,7 @@ var (
 	errNotConstant = errors.New("method is not constant")
 	errConstant    = errors.New("method is constant")
 	errAborted     = errors.New("aborted")
+	errNoSigner    = errors.New("no configured signer")
 )
 
 func executeConstantMethod(cl *ethclient.Client, addr *common.Address, abi *abi.ABI, name string) ([]interface{}, error) {
@@ -222,6 +223,10 @@ func (cr *callResult) results() []interface{} {
 }
 
 func executeTransactMethod(cl *ethclient.Client, addr *common.Address, abi *abi.ABI, name string) (*types.Transaction, error) {
+	if txSigner == nil || txSigner.Kind() == signer.None {
+		fmt.Printf("can't execute transact method without a configured signer\n")
+		return nil, errNoSigner
+	}
 	method := abi.Methods[name]
 	if method.IsConstant() {
 		return nil, errConstant
